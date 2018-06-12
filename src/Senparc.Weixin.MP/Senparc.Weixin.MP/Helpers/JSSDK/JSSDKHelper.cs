@@ -1,5 +1,25 @@
-﻿/*----------------------------------------------------------------
-    Copyright (C) 2017 Senparc
+﻿#region Apache License Version 2.0
+/*----------------------------------------------------------------
+
+Copyright 2018 Jeffrey Su & Suzhou Senparc Network Technology Co.,Ltd.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
+except in compliance with the License. You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the
+License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+either express or implied. See the License for the specific language governing permissions
+and limitations under the License.
+
+Detail: https://github.com/JeffreySu/WeiXinMPSDK/blob/master/license.md
+
+----------------------------------------------------------------*/
+#endregion Apache License Version 2.0
+
+/*----------------------------------------------------------------
+    Copyright (C) 2018 Senparc
     
     文件名：JSSDKHelper.cs
     文件功能描述：JSSDK生成签名的方法等
@@ -15,17 +35,40 @@
 
     修改标识：Senparc - 20170203
     修改描述：优化代码，更新到最新的Helpers方法调用
+
+    修改标识：Senparc - 20170203
+    修改描述：v14.3.137 修改 JSSDKHelper.GetAddrSign 传入参数，应该传入OAuth的AccessToken
+
+    修改标识：Senparc - 20170327
+    修改描述：v14.3.138 修改 JSSDKHelper.GetAddrSign() 方法
+    
+    修改标识：Senparc - 20170623
+    修改描述：v14.4.14 修改 JSSDKHelper.GetcardExtSign()和CreateNonekeySha1() 方法，使用 ASCII 字典排序
+                          排序规则统一为字典排序（ASCII）
+                          
+    修改标识：Senparc - 20170817
+    修改描述：v14.6.3 添加 JSSDKHelper.GetJsSdkUiPackageAsync() 异步方法
+
+    修改标识：Senparc - 20171010
+    修改描述：v14.8.1 修复几处GetNoncestr还在使用GBK编码
+
 ----------------------------------------------------------------*/
 
 using System;
+using System.Linq;
 using System.Collections;
 using System.Text;
+using System.Threading.Tasks;
 using Senparc.Weixin.Helpers;
+using Senparc.Weixin.Helpers.StringHelper;
 using Senparc.Weixin.MP.CommonAPIs;
 using Senparc.Weixin.MP.Containers;
 
 namespace Senparc.Weixin.MP.Helpers
 {
+    /// <summary>
+    /// JS-SDK 帮助类
+    /// </summary>
     public class JSSDKHelper
     {
         /// <summary>
@@ -34,8 +77,7 @@ namespace Senparc.Weixin.MP.Helpers
         /// <returns></returns>
         public static string GetNoncestr()
         {
-            var random = new Random();
-            return EncryptHelper.GetMD5(random.Next(1000).ToString(), "GBK");
+            return EncryptHelper.GetMD5(Guid.NewGuid().ToString(), "UTF-8");
         }
 
         /// <summary>
@@ -58,7 +100,7 @@ namespace Senparc.Weixin.MP.Helpers
         {
             var sb = new StringBuilder();
             var akeys = new ArrayList(parameters.Keys);
-            akeys.Sort();
+            akeys.Sort(ASCIISort.Create());
 
             foreach (var k in akeys)
             {
@@ -87,7 +129,7 @@ namespace Senparc.Weixin.MP.Helpers
         {
             var sb = new StringBuilder();
             var akeys = new ArrayList(parameters.Keys);
-            akeys.Sort();
+            akeys.Sort(ASCIISort.Create());
 
             foreach (var k in akeys)
             {
@@ -99,6 +141,9 @@ namespace Senparc.Weixin.MP.Helpers
             }
             return EncryptHelper.GetSha1(sb.ToString()).ToString().ToLower();
         }
+
+
+
         /// <summary>
         /// 添加卡券Ext参数的签名加密方法
         /// </summary>
@@ -108,8 +153,7 @@ namespace Senparc.Weixin.MP.Helpers
         {
             var sb = new StringBuilder();
             var aValues = new ArrayList(parameters.Values);
-            aValues.Sort();
-
+            aValues.Sort(ASCIISort.Create());
             foreach (var v in aValues)
             {
                 sb.Append(v);
@@ -139,20 +183,22 @@ namespace Senparc.Weixin.MP.Helpers
         /// 获取位置签名AddrSign
         /// </summary>
         /// <param name="appId"></param>
-        /// <param name="appSecret"></param>
+        /// <param name="oauthAccessToken">必须是OAuth的AccessToken</param>
         /// <param name="noncestr"></param>
         /// <param name="timestamp"></param>
         /// <param name="url"></param>
         /// <returns></returns>
-        public static string GetAddrSign(string appId, string appSecret, string noncestr, string timestamp, string url)
+        public static string GetAddrSign(string appId, string oauthAccessToken, string noncestr, string timestamp,
+            string url)
         {
-            var accessToken = AccessTokenContainer.TryGetAccessToken(appId, appSecret);
+            //TODO:此处的accessToken应该为OAuth的AccessToken
+            //var accessToken = AccessTokenContainer.TryGetAccessToken(appId, appSecret);
             var parameters = new Hashtable();
-            parameters.Add("appId", appId);
+            parameters.Add("appid", appId);
             parameters.Add("noncestr", noncestr);
             parameters.Add("timestamp", timestamp);
             parameters.Add("url", url);
-            parameters.Add("accesstoken", accessToken);
+            parameters.Add("accesstoken", oauthAccessToken);
             return CreateSha1(parameters);
         }
 
@@ -167,7 +213,8 @@ namespace Senparc.Weixin.MP.Helpers
         /// <param name="cardId"></param>
         /// <param name="cardType"></param>
         /// <returns></returns>
-        public static string GetCardSign(string appId, string appSecret, string locationId, string noncestr, string timestamp, string cardId, string cardType)
+        public static string GetCardSign(string appId, string appSecret, string locationId, string noncestr,
+            string timestamp, string cardId, string cardType)
         {
             var parameters = new Hashtable();
             parameters.Add("appId", appId);
@@ -190,15 +237,25 @@ namespace Senparc.Weixin.MP.Helpers
         /// <param name="code"></param>
         /// <param name="openid"></param>
         /// <returns></returns>
-        public static string GetcardExtSign(string api_ticket, string timestamp, string card_id, string nonce_str, string code = "", string openid = "")
+        public static string GetcardExtSign(string api_ticket, string timestamp, string card_id, string nonce_str = "",
+            string code = "", string openid = "")
         {
             var parameters = new Hashtable();
             parameters.Add("api_ticket", api_ticket);
             parameters.Add("timestamp", timestamp);
             parameters.Add("card_id", card_id);
-            parameters.Add("code", code);
-            parameters.Add("openid", openid);
-            parameters.Add("nonce_str", nonce_str);
+            if (!string.IsNullOrEmpty(code))
+            {
+                parameters.Add("code", code);
+            }
+            if (!string.IsNullOrEmpty(openid))
+            {
+                parameters.Add("openid", openid);
+            }
+            if (!string.IsNullOrEmpty(nonce_str))
+            {
+                parameters.Add("nonce_str", nonce_str);
+            }
             return CreateNonekeySha1(parameters);
         }
 
@@ -221,5 +278,33 @@ namespace Senparc.Weixin.MP.Helpers
             //返回信息包
             return new JsSdkUiPackage(appId, timestamp, nonceStr, signature);
         }
+
+
+#if !NET35 && !NET40
+        #region 异步方法
+
+        /// <summary>
+        /// 【异步方法】获取给UI使用的JSSDK信息包
+        /// </summary>
+        /// <param name="appId"></param>
+        /// <param name="appSecret"></param>
+        /// <param name="url"></param>
+        /// <returns></returns>
+        public static async Task<JsSdkUiPackage> GetJsSdkUiPackageAsync(string appId, string appSecret, string url)
+        {
+            //获取时间戳
+            var timestamp = GetTimestamp();
+            //获取随机码
+            string nonceStr = GetNoncestr();
+            string ticket = await JsApiTicketContainer.TryGetJsApiTicketAsync(appId, appSecret);
+            //获取签名
+            string signature = JSSDKHelper.GetSignature(ticket, nonceStr, timestamp, url);
+            //返回信息包
+            return new JsSdkUiPackage(appId, timestamp, nonceStr, signature);
+        }
+
+        #endregion
+#endif
     }
 }
+

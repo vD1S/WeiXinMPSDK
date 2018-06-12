@@ -1,5 +1,5 @@
 ﻿/*----------------------------------------------------------------
-    Copyright (C) 2016 Senparc
+    Copyright (C) 2018 Senparc
 
     文件名：Enums.cs
     文件功能描述：枚举类型
@@ -15,6 +15,14 @@
 
     修改标识：zeje - 20150507
     修改描述：v3.3.5 添加Login_User_Type枚举
+
+    修改标识：Senparc - 20150507
+    修改描述：v4.2.1 ResponseMsgType添加SuccessResponse枚举 
+
+    修改标识：pekrr1e  - 20180503
+    修改描述：v1.4.0 新增企业微信群聊会话功能支持
+              v1.4.1 增加“接收通讯录变更事件”
+
 ----------------------------------------------------------------*/
 
 namespace Senparc.Weixin.Work
@@ -125,6 +133,10 @@ namespace Senparc.Weixin.Work
         /// 异步任务完成事件推送
         /// </summary>
         BATCH_JOB_RESULT,
+        /// <summary>
+        /// 通讯录变更事件
+        /// </summary>
+        change_contact,
     }
 
     public enum ThirdPartyInfo
@@ -175,7 +187,8 @@ namespace Senparc.Weixin.Work
         MpNews,
 
         //以下类型为Senparc.Weixin自用类型
-        NoResponse
+        NoResponse,
+        SuccessResponse
     }
 
     /// <summary>
@@ -218,12 +231,12 @@ namespace Senparc.Weixin.Work
     }
 
     /// <summary>
-    /// 上传媒体文件类型
+    /// 上传媒体文件类型（所有文件size必须大于5个字节）【QY移植修改】
     /// </summary>
     public enum UploadMediaFileType
     {
         /// <summary>
-        /// 图片: 1MB，支持JPG格式
+        /// 图片: 2MB，支持JPG,PNG格式
         /// </summary>
         image,
         /// <summary>
@@ -235,7 +248,7 @@ namespace Senparc.Weixin.Work
         /// </summary>
         video,
         /// <summary>
-        /// 普通文件：10MB
+        /// 普通文件：20MB
         /// </summary>
         file
     }
@@ -400,7 +413,12 @@ namespace Senparc.Weixin.Work
     {
         text = 0,
         image = 1,
-        file = 2
+        voice = 2,
+        video = 3,
+        file = 4,
+        textcard = 5,
+        news = 6,
+        mpnews = 7
     }
 
     /// <summary>

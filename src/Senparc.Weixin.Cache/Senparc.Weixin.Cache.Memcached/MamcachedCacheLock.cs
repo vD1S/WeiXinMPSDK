@@ -1,5 +1,5 @@
 ﻿/*----------------------------------------------------------------
-    Copyright (C) 2017 Senparc
+    Copyright (C) 2018 Senparc
 
     文件名：RedisCacheLock.cs
     文件功能描述：本地锁
@@ -9,6 +9,9 @@
 
     修改标识：Senparc - 20170205
     修改描述：v0.2.0 重构分布式锁
+
+    修改标识：spadark - 20170419
+    修改描述：v0.3.0 Memcached同步锁改为使用StoreMode.Add方法
 
 ----------------------------------------------------------------*/
 
@@ -63,15 +66,24 @@ namespace Senparc.Weixin.Cache.Memcached
             {
                 try
                 {
-                    if (_mamcachedStrategy._cache.Get(key) != null)
+                    if (_mamcachedStrategy._cache.Store(StoreMode.Add, key, new object(), new TimeSpan(0, 0, 10)))
                     {
-                        return false;//已被别人锁住，没有取得锁
+                        return true;//取得锁 
                     }
                     else
                     {
-                        _mamcachedStrategy._cache.Store(StoreMode.Set, key, new object(), new TimeSpan(0, 0, 10));//创建锁
-                        return true;//取得锁
+                        return false;//已被别人锁住，没有取得锁
                     }
+
+                    //if (_mamcachedStrategy._cache.Get(key) != null)
+                    //{
+                    //    return false;//已被别人锁住，没有取得锁
+                    //}
+                    //else
+                    //{
+                    //    _mamcachedStrategy._cache.Store(StoreMode.set, key, new object(), new TimeSpan(0, 0, 10));//创建锁
+                    //    return true;//取得锁
+                    //}
                 }
                 catch (Exception ex)
                 {

@@ -1,5 +1,25 @@
-﻿/*----------------------------------------------------------------
-    Copyright (C) 2017 Senparc
+﻿#region Apache License Version 2.0
+/*----------------------------------------------------------------
+
+Copyright 2018 Jeffrey Su & Suzhou Senparc Network Technology Co.,Ltd.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
+except in compliance with the License. You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the
+License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+either express or implied. See the License for the specific language governing permissions
+and limitations under the License.
+
+Detail: https://github.com/JeffreySu/WeiXinMPSDK/blob/master/license.md
+
+----------------------------------------------------------------*/
+#endregion Apache License Version 2.0
+
+/*----------------------------------------------------------------
+    Copyright (C) 2018 Senparc
     
     文件名：MessageHandler.cs
     文件功能描述：微信请求的集中处理方法
@@ -18,6 +38,13 @@
   
     修改标识：Senparc - 20160722
     修改描述：记录上下文，此处修改
+
+    修改标识：Senparc - 20180122
+    修改描述：OnExecuting() 和 OnExecuted() 方法改为 override
+
+    修改标识：Senparc - 20180318
+    修改描述：v14.10.7 MessageHandler消息去重增加对“领取事件推送”的特殊判断 - https://github.com/JeffreySu/WeiXinMPSDK/issues/1106
+
 ----------------------------------------------------------------*/
 
 using System;
@@ -30,7 +57,8 @@ using Senparc.Weixin.MP.AppStore;
 using Senparc.Weixin.MP.Entities;
 using Senparc.Weixin.MP.Entities.Request;
 using Senparc.Weixin.MP.Helpers;
-using Tencent;
+using Senparc.Weixin.MP.Tencent;
+using System.Linq;
 
 namespace Senparc.Weixin.MP.MessageHandlers
 {
@@ -166,6 +194,20 @@ namespace Senparc.Weixin.MP.MessageHandlers
         /// </summary>
         public Func<IRequestMessageBase, bool> OmitRepeatedMessageFunc = null;
 
+
+        #region 私有方法
+
+        /// <summary>
+        /// 标记为已重复消息
+        /// </summary>
+        private void MarkRepeatedMessage()
+        {
+            CancelExcute = true;//重复消息，取消执行
+            MessageIsRepeated = true;
+        }
+
+        #endregion
+
         /// <summary>
         /// 构造MessageHandler
         /// </summary>
@@ -253,11 +295,75 @@ namespace Senparc.Weixin.MP.MessageHandlers
             }
 
 
-            //记录上下文
+            //TODO:分布式系统中本地的上下文会有同步问题，需要同步使用远程的储存
             if (WeixinContextGlobal.UseWeixinContext)
             {
-                WeixinContext.InsertMessage(RequestMessage);
+                var omit = OmitRepeatedMessageFunc == null || OmitRepeatedMessageFunc(RequestMessage);
+
+                lock (WeixinContextGlobal.OmitRepeatLock)//TODO:使用分布式锁
+                {
+                    #region 消息去重
+
+                    if (omit &&
+                        OmitRepeatedMessage &&
+                        CurrentMessageContext.RequestMessages.Count > 0
+                         //&& !(RequestMessage is RequestMessageEvent_Merchant_Order)批量订单的MsgId可能会相同
+                         )
+                    {
+                        //lastMessage必定有值（除非极端小的过期时间条件下，几乎不可能发生）
+                        var lastMessage = CurrentMessageContext.RequestMessages[CurrentMessageContext.RequestMessages.Count - 1];
+
+                        if (
+                            //使用MsgId去重
+                            (lastMessage.MsgId != 0 && lastMessage.MsgId == RequestMessage.MsgId) ||
+                            //使用CreateTime去重（OpenId对象已经是同一个）
+                            (lastMessage.MsgId == RequestMessage.MsgId &&
+                                 lastMessage.CreateTime == RequestMessage.CreateTime &&
+                                 lastMessage.MsgType == RequestMessage.MsgType)
+                            )
+                        {
+                            MarkRepeatedMessage();//标记为已重复
+                        }
+
+                        //判断特殊事件
+                        if (!MessageIsRepeated &&
+                            lastMessage is RequestMessageEventBase &&
+                            RequestMessage is RequestMessageEventBase &&
+                            (lastMessage as RequestMessageEventBase).Event == (RequestMessage as RequestMessageEventBase).Event
+                            )
+                        {
+                            var lastEventMessage = lastMessage as RequestMessageEventBase;
+                            var currentEventMessage = RequestMessage as RequestMessageEventBase;
+                            switch (lastEventMessage.Event)
+                            {
+
+                                case Event.user_get_card://领取事件推送
+                                    //文档：https://mp.weixin.qq.com/wiki?t=resource/res_main&id=mp1451025274
+                                    //问题反馈：https://github.com/JeffreySu/WeiXinMPSDK/issues/1106
+                                    var lastGetUserCardMessage = lastMessage as RequestMessageEvent_User_Get_Card;
+                                    var currentGetUserCardMessage = RequestMessage as RequestMessageEvent_User_Get_Card;
+                                    if (lastGetUserCardMessage.UserCardCode == currentGetUserCardMessage.UserCardCode &&
+                                        lastGetUserCardMessage.CardId == currentGetUserCardMessage.CardId)
+                                    {
+                                        MarkRepeatedMessage();//标记为已重复
+                                    }
+                                    break;
+                                default:
+                                    break;
+                            }
+                        }
+                    }
+
+                    #endregion
+
+                    //在消息没有被去重的情况下记录上下文
+                    if (!MessageIsRepeated)
+                    {
+                        WeixinContext.InsertMessage(RequestMessage);
+                    }
+                }
             }
+
 
             return decryptDoc;
         }
@@ -276,6 +382,27 @@ namespace Senparc.Weixin.MP.MessageHandlers
 
             return RequestMessage.CreateResponseMessage<TR>();
         }
+
+        #region 扩展
+
+        ///// <summary>
+        ///// 根据当前的RequestMessage创建指定类型的ResponseMessage
+        ///// </summary>
+        ///// <typeparam name="TR">基于ResponseMessageBase的响应消息类型</typeparam>
+        ///// <returns></returns>
+        //public ResponseMessageText CreateResponseMessage<TR>(string content) where TR : ResponseMessageText
+        //{
+        //    if (RequestMessage == null)
+        //    {
+        //        return null;
+        //    }
+
+        //    var responseMessage = RequestMessage.CreateResponseMessage<TR>();
+        //    responseMessage.Content = content;
+        //    return responseMessage;
+        //}
+
+        #endregion
 
         /// <summary>
         /// 执行微信请求
@@ -327,13 +454,20 @@ namespace Senparc.Weixin.MP.MessageHandlers
                     case RequestMsgType.ShortVideo:
                         ResponseMessage = OnShortVideoRequest(RequestMessage as RequestMessageShortVideo);
                         break;
+                    case RequestMsgType.File:
+                        ResponseMessage = OnFileRequest(RequestMessage as RequestMessageFile);
+                        break;
+                    case RequestMsgType.Unknown:
+                        ResponseMessage = OnUnknownTypeRequest(RequestMessage as RequestMessageUnknownType);
+                        break;
                     case RequestMsgType.Event:
                         {
                             var requestMessageText = (RequestMessage as IRequestMessageEventBase).ConvertToRequestMessageText();
-                            ResponseMessage = OnTextOrEventRequest(requestMessageText) 
+                            ResponseMessage = OnTextOrEventRequest(requestMessageText)
                                                 ?? OnEventRequest(RequestMessage as IRequestMessageEventBase);
                         }
                         break;
+
                     default:
                         throw new UnknownRequestMsgTypeException("未知的MsgType请求类型", null);
                 }
@@ -355,26 +489,19 @@ namespace Senparc.Weixin.MP.MessageHandlers
             }
         }
 
-        public virtual void OnExecuting()
+        public override void OnExecuting()
         {
-            //消息去重
-            if ((OmitRepeatedMessageFunc == null || OmitRepeatedMessageFunc(RequestMessage) == true) 
-                && OmitRepeatedMessage && CurrentMessageContext.RequestMessages.Count > 1
-                //&& !(RequestMessage is RequestMessageEvent_Merchant_Order)批量订单的MsgId可能会相同
-                )
+            /* 
+             * 此处原消息去重逻辑已经转移到 Init() 方法中。
+             * 原因是插入RequestMessage过程发生在Init中，从Init执行到此处的时间内，
+             * 如果有新消息加入，将导致去重算法失效。
+             * （当然这样情况发生的概率极低，一般只在测试中会发生，
+             * 为了确保各种测试环境下的可靠性，作此修改。  —— Jeffrey Su 2018.1.23
+             */
+
+            if (CancelExcute)
             {
-                var lastMessage = CurrentMessageContext.RequestMessages[CurrentMessageContext.RequestMessages.Count - 2];
-                if ((lastMessage.MsgId != 0 && lastMessage.MsgId == RequestMessage.MsgId)//使用MsgId去重
-                    ||
-                    //使用CreateTime去重（OpenId对象已经是同一个）
-                    ((lastMessage.MsgId == RequestMessage.MsgId 
-                        && lastMessage.CreateTime == RequestMessage.CreateTime 
-                        && lastMessage.MsgType == RequestMessage.MsgType))
-                    )
-                {
-                    CancelExcute = true;//重复消息，取消执行
-                    return;
-                }
+                return;
             }
 
             base.OnExecuting();
@@ -387,7 +514,7 @@ namespace Senparc.Weixin.MP.MessageHandlers
             }
         }
 
-        public virtual void OnExecuted()
+        public override void OnExecuted()
         {
             base.OnExecuted();
         }

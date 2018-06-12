@@ -1,4 +1,24 @@
-﻿/*----------------------------------------------------------------
+﻿#region Apache License Version 2.0
+/*----------------------------------------------------------------
+
+Copyright 2018 Jeffrey Su & Suzhou Senparc Network Technology Co.,Ltd.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
+except in compliance with the License. You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the
+License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+either express or implied. See the License for the specific language governing permissions
+and limitations under the License.
+
+Detail: https://github.com/JeffreySu/WeiXinMPSDK/blob/master/license.md
+
+----------------------------------------------------------------*/
+#endregion Apache License Version 2.0
+
+/*----------------------------------------------------------------
     文件名：Cryptography.cs
     文件功能描述：加解密算法
     
@@ -15,7 +35,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Tencent
+namespace Senparc.Weixin.WxOpen.Tencent
 {
     class Cryptography
     {
@@ -106,7 +126,8 @@ namespace Tencent
 
         private static String AES_encrypt(String Input, byte[] Iv, byte[] Key)
         {
-            var aes = new RijndaelManaged();
+            //RijndaelManaged aes = new RijndaelManaged();
+            SymmetricAlgorithm aes = Aes.Create();
             //秘钥的大小，以位为单位
             aes.KeySize = 256;
             //支持的块大小
@@ -134,7 +155,8 @@ namespace Tencent
 
         private static String AES_encrypt(byte[] Input, byte[] Iv, byte[] Key)
         {
-            var aes = new RijndaelManaged();
+            //RijndaelManaged aes = new RijndaelManaged();
+            SymmetricAlgorithm aes = Aes.Create();
             //秘钥的大小，以位为单位
             aes.KeySize = 256;
             //支持的块大小
@@ -205,7 +227,8 @@ namespace Tencent
         }
         private static byte[] AES_decrypt(String Input, byte[] Iv, byte[] Key)
         {
-            RijndaelManaged aes = new RijndaelManaged();
+            //RijndaelManaged aes = new RijndaelManaged();
+            SymmetricAlgorithm aes = Aes.Create();
             aes.KeySize = 256;
             aes.BlockSize = 128;
             aes.Mode = CipherMode.CBC;
